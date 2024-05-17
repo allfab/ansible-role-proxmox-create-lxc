@@ -1,0 +1,6 @@
+---
+# handlers file for roles/proxmox-create-lxc
+# - name: restart ssh
+#   service:
+#     name: sshd
+#     state: restarted

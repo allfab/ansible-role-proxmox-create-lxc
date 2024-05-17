@@ -1,0 +1,72 @@
+---
+# defaults file for roles/proxmox-create-lxc
+lxc_network_name: eth0
+lxc_network_ip_address: 192.168.5.10
+lxc_network_ip_range: 24
+lxc_network_gateway: 192.168.5.1
+lxc_network_bridge: vmbr0
+lxc_network_firewall: 1
+
+proxmox:
+  node: pve
+  api:
+    host: 192.168.5.5
+    user: "root@pam"
+    password: "mypassword"
+    token_id: "ansible"
+    token_secret: "mytoken"
+
+  lxc:
+    cores: 2
+    description: |    
+      <div align="center"><a href="https://perfecthomelab.allfabox.fr/" target="_blank" rel="noopener noreferrer"><img src="https://raw.githubusercontent.com/allfab/perfect-homelab/main/docs/assets/images/overview/logo-perfect-homelab-proxmox-thumbnail.png"/></a>
+
+      # proxmox-create-lxc Role LXC
+
+      <a href="https://perfecthomelab.allfabox.fr/" target="_blank"><img src="https://img.shields.io/badge/Perfect_Homelab-526CFE?style=for-the-badge&logo=MaterialForMkDocs&logoColor=white" /></a>
+      <a href="https://www.docker.com/" target="_blank"><img src="https://img.shields.io/badge/Docker-526CFE?style=for-the-badge&logo=Docker&logoColor=white" /></a>
+      </div>
+    disk: 4
+    features:
+      fuse: "fuse=1"
+      keyctl: "keyctl=1"
+      nesting: "nesting=1"
+    hostname: default
+    memory: 512
+    nameserver: 1.1.1.1
+    netif: '{"net0":"name=eth0,ip={{ lxc_network_ip_address }}/{{ lxc_network_ip_range }},gw={{ lxc_network_gateway }},bridge={{ lxc_network_bridge }},firewall={{ lxc_network_firewall }}"}'
+    onboot: true
+    ostemplate: "local:vztmpl/debian-12-standard_12.2-1_amd64.tar.zst"
+    password: "{{ vault.me.password }}"
+    searchdomain: lxc.local
+    startup:
+      - order=1
+    storage: "local-lvm"
+    swap: 512
+    tags:
+      - debian
+      - docker
+      - prod
+    timezone: "{{ timezone }}"
+    unprivileged: true
+    vmid: 9999
+
+  zfs:
+    dataset:
+      parent:
+        create: true
+        name: rpool/parent-dataset
+        extra:
+          mountpoint: /opt/parent-dataset
+          compression: lz4
+          atime: off
+          xattr: sa
+          recordsize: 128k
+          quota: 20G
+      child:
+        create: true
+        name: rpool/parent-dataset/child-dataset
+        mountpoint:
+          host: /opt/parent-dataset/child-dataset
+          lxc: /opt/parent-dataset/child-dataset
+        mount: true

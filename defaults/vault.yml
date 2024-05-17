@@ -1,0 +1,23 @@
+---
+# vars/frontend/vault.yml
+vault:
+  proxmox:
+    node: pve
+    api:
+      host: 10.10.10.20
+      user: "root@pam"
+      password: "mypassword"
+      token_id: "myid"
+      token_secret: "my-token"
+    lxc:
+      network:
+        name: eth0
+        ip_address: 192.168.5.10
+        ip_range: 24
+        gateway: 192.168.5.1
+        bridge: vmbr0
+        firewall: 0
+  me:
+    password: "mypassword"
+  ssh:
+    port: 6587

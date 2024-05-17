@@ -1,0 +1,129 @@
+---
+# proxmox-create-lxc/tasks/main.yml
+- name: PRÉREQUIS - DÉPENDANCES
+  apt:
+    name:
+      - "python3-pip"
+      - "python3-proxmoxer>=1.1.0"
+    state: "present"
+
+- name: RÉCUPÉRATION DES INFORMATIONS SUR LE NOEUD PROXMOX "{{ proxmox.api.host }}"
+  community.general.proxmox_user_info:
+    api_host: "{{ proxmox.api.host }}"
+    api_user: "{{ proxmox.api.user }}"
+    api_token_id: "{{ proxmox.api.token_id }}"
+    api_token_secret: "{{ proxmox.api.token_secret }}"
+  register: proxmox_infos
+  
+- name: INFORMATION SUR LE NOEUD PROXMOX
+  ansible.builtin.debug:
+    var: proxmox_infos
+
+- name: CRÉATION CONTAINER LXC "{{ proxmox.lxc.vmid }}"
+  community.general.proxmox:
+    api_host: "{{ proxmox.api.host }}"
+    api_password: "{{ proxmox.api.password }}"
+    api_token_id: "{{ proxmox.api.token_id }}"
+    api_token_secret: "{{ proxmox.api.token_secret }}"
+    api_user: "{{ proxmox.api.user }}"
+    cores: "{{ proxmox.lxc.cores }}"
+    description: "{{ proxmox.lxc.description }}"
+    disk: "{{ proxmox.lxc.disk }}"
+    features:
+      - "{{ proxmox.lxc.features.fuse }}"
+      - "{{ proxmox.lxc.features.keyctl }}"
+      - "{{ proxmox.lxc.features.nesting }}"
+    hostname: "{{ proxmox.lxc.hostname }}"
+    memory: "{{ proxmox.lxc.memory }}"
+    nameserver: "{{ proxmox.lxc.nameserver }}"
+    netif: "{{ proxmox.lxc.netif }}"
+    node: "{{ proxmox.node }}"
+    onboot: "{{ proxmox.lxc.onboot }}"
+    ostemplate: "{{ proxmox.lxc.ostemplate }}"
+    password: "{{ proxmox.lxc.password }}"
+    searchdomain: "{{ proxmox.lxc.searchdomain }}"
+    startup: "{{ proxmox.lxc.startup }}"
+    storage: "{{ proxmox.lxc.storage }}"
+    swap: "{{ proxmox.lxc.swap }}"
+    tags: "{{ proxmox.lxc.tags }}"
+    timezone: "{{ timezone }}"
+    unprivileged: "{{ proxmox.lxc.unprivileged }}"
+    vmid: "{{ proxmox.lxc.vmid }}"
+    state: "present"
+
+- name: DÉMARRAGE CONTAINER LXC "{{ proxmox.lxc.vmid }}"
+  community.general.proxmox:
+    api_host: "{{ proxmox.api.host }}"
+    api_password: "{{ proxmox.api.password }}"
+    api_token_id: "{{ proxmox.api.token_id }}"
+    api_token_secret: "{{ proxmox.api.token_secret }}"
+    api_user: "{{ proxmox.api.user }}"
+    node: "{{ proxmox.node }}"
+    vmid: "{{ proxmox.lxc.vmid }}"
+    state: "started"
+    timeout: 90
+  
+- name: AUTORISER LA CONNEXION 'root' VIA SSH DANS LE CONTENEUR AFIN DE POUSSER LA CONFIGURATION
+  ansible.builtin.command: lxc-attach "{{ proxmox.lxc.vmid }}" -- /bin/bash -c "sed -i -e '{{ item }}' /etc/ssh/sshd_config"
+  with_items:
+    - "s/#PermitRootLogin prohibit-password/PermitRootLogin yes/"
+    - "s/#PasswordAuthentication yes/PasswordAuthentication yes/"
+
+- name: REDÉMARRAGE DU SERVICE 'ssh' SUR LE CONTENEUR "{{ proxmox.lxc.vmid }}"
+  ansible.builtin.command: lxc-attach "{{ proxmox.lxc.vmid }}" -- /bin/bash -c "systemctl restart ssh.service"
+
+- name: CRÉATION DU DATASET ZFS 'parent'
+  community.general.zfs:
+    name: "{{ proxmox.zfs.dataset.parent.name }}"
+    state: present
+    extra_zfs_properties:
+      mountpoint: "{{ proxmox.zfs.dataset.parent.extra.mountpoint }}"
+      compression: "{{ proxmox.zfs.dataset.parent.extra.compression }}"
+      atime: "{{ proxmox.zfs.dataset.parent.extra.atime }}"
+      xattr: "{{ proxmox.zfs.dataset.parent.extra.xattr }}"
+      recordsize: "{{ proxmox.zfs.dataset.parent.extra.recordsize }}"
+      quota: "{{ proxmox.zfs.dataset.parent.extra.quota }}"
+  when: proxmox.zfs.dataset.parent.create
+
+- name: CRÉATION DU DATASET ZFS 'enfant' QUI VA ACCUEILLIR LE POINT DE MONTAGE HOST<->LXC
+  community.general.zfs:
+    name: "{{ proxmox.zfs.dataset.child.name }}"
+    state: present
+    extra_zfs_properties:
+      mountpoint: "{{ proxmox.zfs.dataset.child.mountpoint.host }}"
+  when: proxmox.zfs.dataset.child.create
+
+- name: CONFIGURATION DU POINT DE MONTAGE HOST<->LXC VIA 'pct - Tool to manage Linux Containers (LXC) on Proxmox VE'
+  command: pct set "{{ proxmox.lxc.vmid }}" -mp0 "{{ proxmox.zfs.dataset.child.mountpoint.host }}",mp={{ proxmox.zfs.dataset.child.mountpoint.lxc }}
+  when: proxmox.zfs.dataset.child.create
+  
+- name: CHANGEMENT DES DROITS UTILISATEUR SUR LE POINT DE MONTAGE
+  file:
+    dest: "{{ proxmox.zfs.dataset.child.mountpoint.host }}"
+    owner: 100000
+    group: 100000    
+    recurse: true
+  when: proxmox.zfs.dataset.parent.name != "rpool/postgresql"
+
+- name: DÉMARRAGE DU CONTAINER LXC "{{ proxmox.lxc.vmid }}"
+  community.general.proxmox:
+    api_host: "{{ proxmox.api.host }}"
+    api_password: "{{ proxmox.api.password }}"
+    api_token_id: "{{ proxmox.api.token_id }}"
+    api_token_secret: "{{ proxmox.api.token_secret }}"
+    api_user: "{{ proxmox.api.user }}"
+    node: "{{ proxmox.node }}"
+    vmid: "{{ proxmox.lxc.vmid }}"
+    state: "started"
+    timeout: 90
+
+# - name: TEST DU RÉSEAU SUR LE CONTENEUR "{{ proxmox.lxc.vmid }}"
+#   ansible.builtin.command: lxc-attach "{{ proxmox.lxc.vmid }}" -- /bin/bash -c "ping -c 10 10 192.168.10.5"
+
+- name: ATTENTE DE LA DISPONIBILITÉ DU SERVICE SSH SUR LE CONTENEUR LXC "{{ proxmox.lxc.vmid }}" AVANT DE POURSUIVRE
+  wait_for:
+    port: 22
+    host: "{{ lxc_network_ip_address }}"
+    search_regex: OpenSSH
+    delay: 10
+  connection: local
